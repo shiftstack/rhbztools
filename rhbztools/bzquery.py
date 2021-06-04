@@ -18,6 +18,7 @@
 import argparse
 import json
 import logging
+import yaml
 
 from rhbztools.bugzilla import Session, AuthError, AuthRequired
 from rhbztools import bzql
@@ -25,10 +26,20 @@ from rhbztools import bzql
 LOG = logging.getLogger(__name__)
 
 
+class CommaListArg(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        listarg = getattr(namespace, self.dest)
+        if listarg is None:
+            listarg = []
+            setattr(namespace, self.dest, listarg)
+
+        listarg.extend(values.split(','))
+
 def main():
     parser = argparse.ArgumentParser(description='Query bugzilla')
-    parser.add_argument('-f', '--field', action='append', type=str)
+    parser.add_argument('-f', '--field', action=CommaListArg, type=str)
     parser.add_argument('-d', '--debug', action='count', default=0)
+    parser.add_argument('-q', '--queryfile')
     parser.add_argument('query', type=str)
     opts = parser.parse_args()
 
@@ -37,6 +48,20 @@ def main():
     if opts.debug > 1:
         logging.basicConfig(level=logging.DEBUG)
 
+    queries = {}
+    if opts.queryfile is not None:
+        try:
+            with open(opts.queryfile, 'r') as queryfile:
+                queries = yaml.safe_load(queryfile)
+        except Exception as ex:
+            parser.error('Unable to read queries from {path}: {msg}'.format(
+                            path=parser.queryfile, msg=str(ex)))
+
+    if opts.query in queries:
+        query = queries[opts.query]
+    else:
+        query = opts.query
+
     try:
         bz = Session()
     except (AuthRequired, AuthError) as ex:
@@ -44,9 +69,9 @@ def main():
         return 1
 
     try:
-        response = bz.query(opts.query, opts.field)
+        response = bz.query(query, opts.field)
     except Exception as ex:
         print('Error fetching bugs: {msg}'.format(msg=str(ex)))
         return 1
 
-    print(json.dumps(response))
+    print(json.dumps(list(response)))
