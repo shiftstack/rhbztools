@@ -103,32 +103,49 @@ class Session:
         return self.get_bugs([bzid], fields=fields)
 
     @staticmethod
-    def _buglist(response):
+    def _buglist(response, fields):
         if response.get('error'):
             raise BugzillaError(response.get('message'))
 
-        return response.get('bugs')
+        if fields is not None and 'bzurl' in fields:
+            def add_url(bug):
+                bug['bzurl'] = 'https://bugzilla.redhat.com/{bzid}'.format(
+                                bzid=bug['id'])
+                return bug
+            transform = add_url
+        else:
+            transform = lambda x: x
+
+        return (transform(bug) for bug in response.get('bugs'))
+
+    @staticmethod
+    def _include_fields(fields):
+        if fields is not None:
+            if 'id' not in fields:
+                fields = fields + ['id']
+            return ','.join(fields)
 
     def get_bugs(self, bzids, fields=None):
         params = {'id': ','.join((str(bzid) for bzid in bzids))}
         params.update(dataclasses.asdict(self.creds))
-        if fields is not None:
-            params['include_fields'] = ','.join(fields + ['id'])
 
-        response = self._get(['bug'], params)['bugs']
-        return self._buglist(response)
+        include_fields = self._include_fields(fields)
+        if include_fields is not None:
+            params['include_fields'] = include_fields
+
+        response = self._get(['bug'], params)
+        return self._buglist(response, fields)
 
     def query(self, query, fields=None):
         parser = bzql.parser()
         params = parser(query)
 
-        if fields is not None:
-            if 'id' not in fields:
-                fields = ['id'] + fields
-            params['include_fields'] = ','.join(fields)
+        include_fields = self._include_fields(fields)
+        if include_fields is not None:
+            params['include_fields'] = include_fields
 
         response = self._get(['bug'], params)
-        return self._buglist(response)
+        return self._buglist(response, fields)
 
     def update_bug(self, bzid, values):
         return self._put(['bug', str(bzid)], body=values)
