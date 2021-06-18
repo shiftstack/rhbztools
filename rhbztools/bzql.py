@@ -29,8 +29,8 @@ class BZQLWalker(NodeWalker):
         self.n = 0
         self.params = {}
 
-        self.special_ops = {
-            '==': 'equals',
+        self.aliased_ops = {
+            '=': 'equals',
             '!=': 'notequals',
             'in': 'anyexact',
             '~': 'regexp',
@@ -39,6 +39,18 @@ class BZQLWalker(NodeWalker):
             '<=': 'lessthaneq',
             '>': 'greaterthan',
             '>=': 'greaterthaneq',
+            'contains': 'casesubstring',
+        }
+
+        self.aliased_query_fields = {
+            'devel_whiteboard': 'cf_devel_whiteboard',
+            'fixed_in': 'cf_fixed_in',
+            'flags': 'flagtypes.name',
+            'internal_whiteboard': 'cf_internal_whiteboard',
+            'pm_score': 'cf_pm_score',
+            'qa_whiteboard': 'cf_qa_whiteboard',
+            'status': 'bug_status',
+            'zstream_target_release': 'cf_zstream_target_release',
         }
 
     def _set(self, key, value, n=None):
@@ -95,11 +107,15 @@ class BZQLWalker(NodeWalker):
             self.walk(node.ast)
 
     def walk_OpExpression(self, node, negate=False):
-        op = self.special_ops.get(node.op)
+        op = self.aliased_ops.get(node.op)
         if op is None:
             op = node.op
 
-        self._set('f', node.field)
+        field = self.aliased_query_fields.get(node.field)
+        if field is None:
+            field = node.field
+
+        self._set('f', field)
         self._set('o', op)
         if negate:
             self._set('n', 1)
